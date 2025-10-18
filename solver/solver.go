@@ -3,13 +3,17 @@ package solver
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"sync"
+
+	"golang.org/x/sync/errgroup"
 )
 
 var (
 	errInvalidValue   = errors.New("attempted to set cell to invalid value")
 	errPopulatedValue = errors.New("failed to set cell to value, cell was already populated")
 	errBannedValue    = errors.New("attempted to set cell to banned value")
+	errBuildFailure   = errors.New("failed to build the board")
 )
 
 type Cell struct {
@@ -26,7 +30,8 @@ type Cell struct {
 
 func NewCell() *Cell {
 	c := Cell{
-		Speaker: make(chan int, 24),
+		Speaker:      make(chan int, 24),
+		bannedValues: map[int]bool{},
 	}
 
 	return &c
@@ -37,8 +42,6 @@ func (c *Cell) SetValue(value int) error {
 		return fmt.Errorf("%w [%d]", errInvalidValue, value)
 	}
 
-	c.mu.Lock()
-
 	if c.value != 0 {
 		return fmt.Errorf("%w [%d, %d]", errPopulatedValue, value, c.value)
 	}
@@ -48,7 +51,6 @@ func (c *Cell) SetValue(value int) error {
 	}
 
 	c.value = value
-	c.mu.Unlock()
 
 	for _, cellSpeaker := range c.Block {
 		cellSpeaker <- value
@@ -65,9 +67,31 @@ func (c *Cell) SetValue(value int) error {
 	return nil
 }
 
-type coords struct {
-	X int
-	Y int
+func (c *Cell) GetValue() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.value
+}
+
+func (c *Cell) Listen() error {
+	if c.value != 0 {
+		return nil
+	}
+	for rec := range c.Speaker {
+		c.mu.Lock()
+		c.bannedValues[rec] = true
+		if len(c.bannedValues) == 8 {
+			for i := 1; i <= 9; i++ {
+				if !c.bannedValues[i] {
+					err := c.SetValue(i)
+					c.mu.Unlock()
+					return err
+				}
+			}
+		}
+		c.mu.Unlock()
+	}
+	return fmt.Errorf("should not get here")
 }
 
 /* CreateBoard returns a 9x9 2D array of Cells
@@ -140,5 +164,71 @@ func connectBlocks(cells []*Cell) {
 			}
 			cells[listenerNum].Block = append(cells[listenerNum].Block, cells[speakerNum].Speaker)
 		}
+	}
+}
+
+func PopulateBoard(board *[9][9]*Cell, values [][]string) error {
+	// Initialize Board
+	for rowNum := range board {
+		for colNum := range board[rowNum] {
+			fmt.Printf("x: %d, y: %d\n", rowNum, colNum)
+			num, err := strconv.Atoi(values[rowNum][colNum])
+			if err != nil {
+				return fmt.Errorf("%w: %w", errBuildFailure, err)
+			}
+			if num == 0 {
+				continue
+			}
+			err = board[rowNum][colNum].SetValue(num)
+			if err != nil {
+				return fmt.Errorf("%w: %w", errBuildFailure, err)
+			}
+		}
+	}
+
+	fmt.Println("finished initializing board")
+
+	return nil
+}
+
+func VisualizeBoard(board *[9][9]*Cell) {
+	rowSep := "-----------------------------------------"
+	fmt.Println(rowSep)
+	for rowNum := range board {
+		if rowNum%3 == 0 {
+			fmt.Println(rowSep)
+		}
+		fmt.Print("|")
+		for colNum := range board[rowNum] {
+			if colNum%3 == 0 {
+				fmt.Printf("|")
+			}
+			val := board[rowNum][colNum].GetValue()
+			if val != 0 {
+				fmt.Printf(" %d |", val)
+			} else {
+				fmt.Printf("   |")
+			}
+
+		}
+		fmt.Println("|")
+		fmt.Println(rowSep)
+
+	}
+	fmt.Println(rowSep)
+}
+
+func SolveBoard(board *[9][9]*Cell) {
+	g := new(errgroup.Group)
+
+	for rowNum := range board {
+		for colNum := range board[rowNum] {
+			g.Go(board[rowNum][colNum].Listen)
+		}
+	}
+
+	err := g.Wait()
+	if err != nil {
+		fmt.Printf("error occured while solving board: %v", err)
 	}
 }
