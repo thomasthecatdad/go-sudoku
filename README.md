@@ -8,10 +8,10 @@ Solving techniques are based on [f-puzzles.com](https://f-puzzles.com/Solving%20
 
 - Beginner
     - [x] Naked singles
-    - [] Hidden singles
+    - [ ] Hidden singles
 - Intermediate
-    - [] Naked pairs, triples, etc.
-    - [] Hidden pairs, triples, etc.
-    - [] Pointing pairs, triples, etc.
+    - [ ] Naked pairs, triples, etc.
+    - [ ] Hidden pairs, triples, etc.
+    - [ ] Pointing pairs, triples, etc.
 - To be continued
 
